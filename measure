@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>태양 관측 실험 도구</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        /* 캔버스 기본 스타일 */
+        canvas {
+            display: block;
+            background-color: #e0f2fe; /* Light blue sky background */
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-8 flex items-center justify-center min-h-screen">
+    <div class="bg-white p-6 sm:p-10 rounded-3xl shadow-xl w-full max-w-4xl">
+        <h1 class="text-3xl sm:text-4xl font-bold text-center text-gray-800 mb-2">태양 관측 실험 기록기 ☀️</h1>
+        <p class="text-center text-gray-500 mb-8 text-sm sm:text-base">
+            하루 동안 태양 고도, 그림자 길이, 기온을 측정하여 기록하고 그래프와 그림으로 확인해 보세요!
+        </p>
+
+        <!-- Data Input Section -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <input type="text" id="time-input" placeholder="시간 (예: 10:00)" class="p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+            <input type="number" id="altitude-input" placeholder="태양 고도 (°)" class="p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+            <input type="number" id="shadow-input" placeholder="그림자 길이 (cm)" class="p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+            <input type="number" id="temp-input" placeholder="기온 (°C)" class="p-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors">
+        </div>
+        <div class="flex flex-col sm:flex-row gap-4 mb-8">
+            <button id="add-data-btn" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-colors transform hover:scale-105">
+                데이터 추가
+            </button>
+            <button id="draw-graph-btn" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-colors transform hover:scale-105">
+                그래프 및 그림 그리기
+            </button>
+            <button id="clear-data-btn" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-6 rounded-xl shadow-md transition-colors transform hover:scale-105">
+                데이터 초기화
+            </button>
+        </div>
+
+        <!-- Data Table Section -->
+        <div class="overflow-x-auto mb-8">
+            <table class="min-w-full bg-white rounded-xl shadow-sm">
+                <thead>
+                    <tr class="bg-gray-100 text-gray-600 uppercase text-sm leading-normal">
+                        <th class="py-3 px-6 text-left">시간</th>
+                        <th class="py-3 px-6 text-left">태양 고도 (°)</th>
+                        <th class="py-3 px-6 text-left">그림자 길이 (cm)</th>
+                        <th class="py-3 px-6 text-left">기온 (°C)</th>
+                    </tr>
+                </thead>
+                <tbody id="data-table-body" class="text-gray-600 text-sm font-light">
+                    <!-- Data rows will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Sun Visualization Section -->
+        <div class="mt-8">
+            <h2 class="text-xl sm:text-2xl font-bold text-center text-gray-700 mb-4">태양 위치 및 기온 변화 그림 🌡️</h2>
+            <div class="bg-gray-50 p-4 rounded-xl shadow-inner border border-gray-200">
+                <canvas id="sun-visualization-canvas" width="800" height="400" class="w-full h-auto"></canvas>
+            </div>
+        </div>
+        
+        <!-- Graph Section -->
+        <div class="mt-8">
+            <h2 class="text-xl sm:text-2xl font-bold text-center text-gray-700 mb-4">시간에 따른 데이터 변화 그래프 📈</h2>
+            <div class="bg-gray-50 p-4 rounded-xl shadow-inner border border-gray-200">
+                <canvas id="correlation-chart" width="800" height="400" class="w-full h-auto"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        window.onload = function() {
+            // 필요한 HTML 요소들을 모두 가져옵니다.
+            const timeInput = document.getElementById('time-input');
+            const altitudeInput = document.getElementById('altitude-input');
+            const shadowInput = document.getElementById('shadow-input');
+            const tempInput = document.getElementById('temp-input');
+            const addDataBtn = document.getElementById('add-data-btn');
+            const drawGraphBtn = document.getElementById('draw-graph-btn');
+            const clearDataBtn = document.getElementById('clear-data-btn');
+            const dataTableBody = document.getElementById('data-table-body');
+            const chartCanvas = document.getElementById('correlation-chart');
+            const sunVizCanvas = document.getElementById('sun-visualization-canvas');
+
+            let experimentData = [];
+            let myChart = null;
+            let animationFrameId = null; // 애니메이션 프레임 ID를 저장할 변수
+
+            // 데이터 표를 업데이트하는 함수
+            function updateTable() {
+                dataTableBody.innerHTML = '';
+                experimentData.forEach(data => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="py-3 px-6 whitespace-nowrap">${data.time}</td>
+                        <td class="py-3 px-6">${data.altitude}</td>
+                        <td class="py-3 px-6">${data.shadow}</td>
+                        <td class="py-3 px-6">${data.temp}</td>
+                    `;
+                    row.classList.add('border-b', 'border-gray-200', 'hover:bg-gray-50');
+                    dataTableBody.appendChild(row);
+                });
+            }
+
+            // 캔버스에 정적인 배경을 그리는 함수
+            function drawStaticBackground(ctx, canvasWidth, canvasHeight) {
+                // 배경 그라데이션 (하늘)
+                const skyGradient = ctx.createLinearGradient(0, 0, 0, canvasHeight);
+                skyGradient.addColorStop(0, '#87ceeb'); // Top sky color
+                skyGradient.addColorStop(1, '#e0f2fe'); // Bottom sky color
+                ctx.fillStyle = skyGradient;
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                // 지면 그리기
+                ctx.fillStyle = '#10b981'; // Green-500
+                ctx.fillRect(0, canvasHeight * 0.8, canvasWidth, canvasHeight * 0.2);
+            }
+
+            // 태양 위치 및 기온 변화 애니메이션을 관리하는 함수
+            function drawSunVisualization() {
+                const ctx = sunVizCanvas.getContext('2d');
+                const canvasWidth = sunVizCanvas.width;
+                const canvasHeight = sunVizCanvas.height;
+
+                // 애니메이션 시작 전에 캔버스 초기화 및 배경 그리기
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                drawStaticBackground(ctx, canvasWidth, canvasHeight);
+
+                // 데이터가 2개 미만이면 애니메이션을 시작할 수 없습니다.
+                if (experimentData.length < 2) {
+                    return;
+                }
+
+                // 데이터 정렬 (시간 순서대로)
+                experimentData.sort((a, b) => new Date(`2000/01/01 ${a.time}`) - new Date(`2000/01/01 ${b.time}`));
+
+                // 데이터의 시간, 고도, 기온 범위 계산
+                const timesInMs = experimentData.map(d => new Date(`2000/01/01 ${d.time}`).getTime());
+                const altitudes = experimentData.map(d => d.altitude);
+                const temps = experimentData.map(d => d.temp);
+
+                const minTime = timesInMs[0];
+                const maxTime = timesInMs[timesInMs.length - 1];
+                const totalTimeRange = maxTime - minTime;
+                
+                const minTemp = Math.min(...temps);
+                const maxTemp = Math.max(...temps);
+                const tempRange = maxTemp - minTemp;
+
+                // 애니메이션 루프
+                const animationDuration = 5000; // 5초 동안 애니메이션
+                let startTime = null;
+
+                function animate(timestamp) {
+                    if (!startTime) startTime = timestamp;
+                    const elapsedTime = timestamp - startTime;
+                    const progress = Math.min(elapsedTime / animationDuration, 1);
+
+                    // 캔버스 초기화 및 배경 그리기
+                    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                    drawStaticBackground(ctx, canvasWidth, canvasHeight);
+
+                    // 현재 시간/고도/기온 값 계산 (보간)
+                    let currentAltitude, currentTemp, currentTime;
+                    if (progress === 1) { // 애니메이션이 끝났을 때 마지막 데이터 포인트 사용
+                        currentAltitude = altitudes[altitudes.length - 1];
+                        currentTemp = temps[temps.length - 1];
+                        currentTime = experimentData[experimentData.length - 1].time;
+                    } else {
+                        // 현재 진행 상황에 맞는 데이터 인덱스 찾기
+                        const currentGlobalTime = minTime + (totalTimeRange * progress);
+                        
+                        let currentIndex = 0;
+                        for (let i = 0; i < timesInMs.length - 1; i++) {
+                            if (currentGlobalTime >= timesInMs[i] && currentGlobalTime <= timesInMs[i+1]) {
+                                currentIndex = i;
+                                break;
+                            }
+                        }
+
+                        // 두 데이터 포인트 사이의 보간
+                        const startData = experimentData[currentIndex];
+                        const endData = experimentData[currentIndex + 1];
+                        const startMs = timesInMs[currentIndex];
+                        const endMs = timesInMs[currentIndex + 1];
+                        const localProgress = (currentGlobalTime - startMs) / (endMs - startMs);
+
+                        currentAltitude = startData.altitude + (endData.altitude - startData.altitude) * localProgress;
+                        currentTemp = startData.temp + (endData.temp - startData.temp) * localProgress;
+                        
+                        // 시간 텍스트도 보간하여 자연스럽게 보이도록
+                        const startHour = parseInt(startData.time.split(':')[0], 10);
+                        const startMinute = parseInt(startData.time.split(':')[1], 10);
+                        const endHour = parseInt(endData.time.split(':')[0], 10);
+                        const endMinute = parseInt(endData.time.split(':')[1], 10);
+
+                        const totalStartMinutes = startHour * 60 + startMinute;
+                        const totalEndMinutes = endHour * 60 + endMinute;
+                        const totalCurrentMinutes = totalStartMinutes + (totalEndMinutes - totalStartMinutes) * localProgress;
+
+                        const currentHour = Math.floor(totalCurrentMinutes / 60);
+                        const currentMinute = Math.round(totalCurrentMinutes % 60);
+                        currentTime = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+                    }
+                    
+                    // 태양의 X, Y 좌표 계산
+                    const x = canvasWidth * progress;
+                    const y = canvasHeight * 0.8 - (currentAltitude / 90) * (canvasHeight * 0.7);
+
+                    // 태양 그리기
+                    ctx.beginPath();
+                    ctx.arc(x, y, 20, 0, Math.PI * 2, false);
+                    ctx.fillStyle = '#fde047'; // Yellow-300
+                    ctx.fill();
+
+                    // 기온을 나타내는 온도계 그리기
+                    const thermometerHeight = 80;
+                    const thermometerWidth = 15;
+                    const thermometerX = x + 30;
+                    const thermometerY = y - 40;
+                    
+                    // 온도계 몸통 (빈 부분)
+                    ctx.beginPath();
+                    ctx.rect(thermometerX, thermometerY, thermometerWidth, thermometerHeight);
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                    ctx.fill();
+                    ctx.strokeStyle = '#6b7280';
+                    ctx.stroke();
+
+                    // 온도계 눈금 (채워진 부분)
+                    const tempFillHeight = tempRange > 0 ? ((currentTemp - minTemp) / tempRange) * thermometerHeight : 0;
+                    ctx.beginPath();
+                    ctx.rect(thermometerX, thermometerY + thermometerHeight - tempFillHeight, thermometerWidth, tempFillHeight);
+                    ctx.fillStyle = '#dc2626'; // Red-600
+                    ctx.fill();
+
+                    // 기온 텍스트
+                    ctx.fillStyle = '#374151'; // Gray-700
+                    ctx.font = '14px Inter';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${currentTemp.toFixed(1)}°C`, thermometerX + thermometerWidth / 2, thermometerY - 5);
+                    
+                    // 시간 텍스트
+                    ctx.fillText(currentTime, x, canvasHeight * 0.85);
+
+                    if (progress < 1) {
+                        animationFrameId = requestAnimationFrame(animate);
+                    } else {
+                        // 애니메이션 종료 후, 모든 데이터 포인트의 태양과 온도계를 그립니다.
+                        drawAllStaticDataPoints();
+                    }
+                }
+
+                // 모든 데이터 포인트의 태양과 온도계를 정적으로 그리는 함수
+                function drawAllStaticDataPoints() {
+                    experimentData.forEach(data => {
+                        const timeInMs = new Date(`2000/01/01 ${data.time}`).getTime();
+                        
+                        const x = canvasWidth * ((timeInMs - minTime) / (maxTime - minTime));
+                        const y = canvasHeight * 0.8 - (data.altitude / 90) * (canvasHeight * 0.7);
+                        
+                        ctx.beginPath();
+                        ctx.arc(x, y, 20, 0, Math.PI * 2, false);
+                        ctx.fillStyle = '#fde047';
+                        ctx.fill();
+
+                        const thermometerHeight = 80;
+                        const thermometerWidth = 15;
+                        const thermometerX = x + 30;
+                        const thermometerY = y - 40;
+                        
+                        ctx.beginPath();
+                        ctx.rect(thermometerX, thermometerY, thermometerWidth, thermometerHeight);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.fill();
+                        ctx.strokeStyle = '#6b7280';
+                        ctx.stroke();
+                        
+                        const tempFillHeight = tempRange > 0 ? ((data.temp - minTemp) / tempRange) * thermometerHeight : 0;
+                        ctx.beginPath();
+                        ctx.rect(thermometerX, thermometerY + thermometerHeight - tempFillHeight, thermometerWidth, tempFillHeight);
+                        ctx.fillStyle = '#dc2626';
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#374151';
+                        ctx.font = '14px Inter';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`${data.temp}°C`, thermometerX + thermometerWidth / 2, thermometerY - 5);
+                        
+                        ctx.fillText(data.time, x, canvasHeight * 0.85);
+                    });
+                }
+                
+                // 기존 애니메이션이 있다면 중지합니다.
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                }
+                // 애니메이션 시작
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            // "데이터 추가" 버튼 이벤트 리스너
+            addDataBtn.addEventListener('click', () => {
+                const time = timeInput.value.trim();
+                const altitude = parseFloat(altitudeInput.value);
+                const shadow = parseFloat(shadowInput.value);
+                const temp = parseFloat(tempInput.value);
+
+                // 입력값 유효성 검사
+                if (!time || isNaN(altitude) || isNaN(shadow) || isNaN(temp)) {
+                    // 사용자에게 알림 메시지를 보여줍니다.
+                    alert('모든 값을 올바르게 입력해주세요.');
+                    return;
+                }
+
+                // 배열에 새로운 데이터 추가
+                experimentData.push({ time, altitude, shadow, temp });
+                
+                // 입력 필드 초기화
+                timeInput.value = '';
+                altitudeInput.value = '';
+                shadowInput.value = '';
+                tempInput.value = '';
+
+                // 데이터 표 업데이트
+                updateTable();
+            });
+
+            // "그래프 및 그림 그리기" 버튼 이벤트 리스너
+            drawGraphBtn.addEventListener('click', () => {
+                // 이전 그래프가 있으면 파괴합니다.
+                if (myChart) {
+                    myChart.destroy();
+                }
+
+                if (experimentData.length < 2) {
+                    alert('그래프를 그리려면 2개 이상의 데이터가 필요합니다.');
+                    return;
+                }
+
+                // 데이터를 그래프 형식에 맞게 변환
+                const labels = experimentData.map(data => data.time);
+                const altitudes = experimentData.map(data => data.altitude);
+                const shadows = experimentData.map(data => data.shadow);
+                const temps = experimentData.map(data => data.temp);
+
+                // Chart.js 설정
+                const data = {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '태양 고도',
+                            data: altitudes,
+                            borderColor: '#4338ca', // indigo-700
+                            backgroundColor: 'rgba(67, 56, 202, 0.2)',
+                            fill: false,
+                            tension: 0.4
+                        },
+                        {
+                            label: '그림자 길이',
+                            data: shadows,
+                            borderColor: '#10b981', // green-500
+                            backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                            fill: false,
+                            tension: 0.4
+                        },
+                        {
+                            label: '기온',
+                            data: temps,
+                            borderColor: '#ef4444', // red-500
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                            fill: false,
+                            tension: 0.4
+                        }
+                    ]
+                };
+
+                const config = {
+                    type: 'line',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            title: {
+                                display: true,
+                                text: '시간에 따른 태양 고도, 그림자 길이, 기온 변화',
+                                font: {
+                                    size: 16
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: '시간'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: '값'
+                                }
+                            }
+                        }
+                    }
+                };
+
+                // 새로운 차트 생성
+                myChart = new Chart(chartCanvas, config);
+                
+                // 태양 위치 그림 그리기 함수 호출
+                drawSunVisualization();
+            });
+
+            // "데이터 초기화" 버튼 이벤트 리스너
+            clearDataBtn.addEventListener('click', () => {
+                experimentData = [];
+                updateTable();
+                
+                // 그래프와 그림 모두 초기화
+                if (myChart) {
+                    myChart.destroy();
+                    myChart = null;
+                }
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                const sunVizCtx = sunVizCanvas.getContext('2d');
+                sunVizCtx.clearRect(0, 0, sunVizCanvas.width, sunVizCanvas.height);
+            });
+        };
+    </script>
+</body>
+</html>
